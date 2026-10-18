@@ -19,10 +19,12 @@ PC용 오리지널 게임. 작업명은 당분간 **미제**.
 - **실시간 교섭** — 면접·면담·팀장 달래기·평가 자리에서 타이밍·침묵·끼어들기가 결과 좌우
 - **프로파일링** — 팀장·개발·기획·경영진의 성향·파벌·꼰대 트리거를 파악해 대응에 반영
 - **에피소드형 서사** — HR 위기 단편이 정규직 전환 D-30으로 수렴
+- **스테이크 미스매치** — 사안은 서류·도장처럼 작아도, 시스템·플레이어 비용은 인질극급으로 진지 (고통의 코미디)
 
 ## 문서
 
 - [`docs/project-context.md`](docs/project-context.md) — 확정 결정·오픈 퀘스천·레퍼런스
+- [`docs/reference-tension-from-lunchbox.md`](docs/reference-tension-from-lunchbox.md) — 「도시락 데우기」 플레이 레퍼런스 → 긴장 레시피
 - [`docs/test-episode-family-certificate.md`](docs/test-episode-family-certificate.md) — 테스트 에피소드(가족관계증명서) 초안
 
 ## 현재 상태
