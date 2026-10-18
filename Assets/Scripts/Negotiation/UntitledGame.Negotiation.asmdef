@@ -1,0 +1,14 @@
+{
+    "name": "UntitledGame.Negotiation",
+    "rootNamespace": "UntitledGame.Negotiation",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

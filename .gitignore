@@ -1,0 +1,29 @@
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+MemoryCaptures/
+Recordings/
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+*.app
+.DS_Store
+
+# IDE
+.vs/
+.idea/
+*.csproj.user
+*.sln.DotSettings.user
+
+# Playtest
+tools/Playtest/bin/
+tools/Playtest/obj/

@@ -21,12 +21,27 @@ PC용 오리지널 게임. 작업명은 당분간 **미제**.
 - **에피소드형 서사** — HR 위기 단편이 정규직 전환 D-30으로 수렴
 - **스테이크 미스매치** — 사안은 서류·도장처럼 작아도, 시스템·플레이어 비용은 인질극급으로 진지 (고통의 코미디)
 
+## 프로토타입 실행
+
+가족관계증명서 교섭 루프가 코드로 들어가 있다. 상세 → [`docs/dev-prototype.md`](docs/dev-prototype.md)
+
+```bash
+dotnet run --project tools/Playtest
+```
+
+조작: `1~4` 선택 · `S` 침묵 · `I` 끼어들기 · 대기 시 침묵 자동 · `Q` 종료.
+
+Unity 2022.3 LTS로 이 저장소 루트를 열면 `NegotiationBootstrap`이 플레이 모드 UI를 띄운다.
+
 ## 문서
 
 - [`docs/project-context.md`](docs/project-context.md) — 확정 결정·오픈 퀘스천·레퍼런스
 - [`docs/reference-tension-from-lunchbox.md`](docs/reference-tension-from-lunchbox.md) — 「도시락 데우기」 플레이 레퍼런스 → 긴장 레시피
+- [`docs/templates/`](docs/templates/) — **에피소드 기획 템플릿** (본편 초안 + 회의용 원페이지)
+- [`docs/episodes/`](docs/episodes/) — 채워 넣은 에피소드 초안 모음
 - [`docs/test-episode-family-certificate.md`](docs/test-episode-family-certificate.md) — 테스트 에피소드(가족관계증명서) 초안
+- [`docs/dev-prototype.md`](docs/dev-prototype.md) — 프로토타입 실행·폴더 구조
 
 ## 현재 상태
 
-디자인·컨텍스트 정리 단계. 프로토타입은 면접·면담·팀장 달래기 중 한 장면으로 실시간 압박 + 프로파일 반영을 검증하는 방향.
+테스트 에피소드(가족관계증명서) 교섭 Core + 콘솔 플레이테스트 가동. Unity 에디터 연결은 Hub에서 프로젝트 오픈 후 진행.
