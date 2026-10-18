@@ -37,7 +37,7 @@ Unity 2022.3 LTS로 이 저장소 루트를 열면 `NegotiationBootstrap`이 플
 
 - [`docs/project-context.md`](docs/project-context.md) — 확정 결정·오픈 퀘스천·레퍼런스
 - [`docs/reference-tension-from-lunchbox.md`](docs/reference-tension-from-lunchbox.md) — 「도시락 데우기」 플레이 레퍼런스 → 긴장 레시피
-- [`docs/templates/`](docs/templates/) — **에피소드 기획 템플릿** (본편 초안 + 회의용 원페이지)
+- [`docs/templates/`](docs/templates/) — 에피소드 문서 양식 (요약 원페이지 + 본편 초안)
 - [`docs/episodes/`](docs/episodes/) — 채워 넣은 에피소드 초안 모음
 - [`docs/test-episode-family-certificate.md`](docs/test-episode-family-certificate.md) — 테스트 에피소드(가족관계증명서) 초안
 - [`docs/dev-prototype.md`](docs/dev-prototype.md) — 프로토타입 실행·폴더 구조
