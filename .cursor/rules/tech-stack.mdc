@@ -5,7 +5,8 @@ alwaysApply: true
 
 # 기술 스택
 
-근거: `docs/project-context.md`의 확정 결정.
+근거: `docs/bible/01_GAME_BIBLE.md` · 시스템 `docs/bible/05_GAME_SYSTEM.md` · 연출 `07_PRESENTATION.md` · 파이프라인 `08_CONTENT_PIPELINE.md`.  
+오픈 퀘스천 목록: `docs/project-context.md`.
 
 ## 확정
 
@@ -20,4 +21,6 @@ alwaysApply: true
 - 새 프로토타입·씬·시스템 코드는 Unity 2D + C# 전제
 - Unreal, Godot, 웹/HTML5 런타임 등으로 스택을 바꾸지 말 것
 - 엔진·플랫폼 변경이 필요해 보이면 구현 전에 사용자에게 확인
-- 미결정 항목(톤 수위, 에피소드 수, 멀티엔딩, 회사 디테일)은 임의로 “확정”하지 말고 `docs/project-context.md`에 맞춰 오픈으로 두거나 질문할 것
+- 미결정 항목(톤 수위, 에피소드 수, 멀티엔딩, 회사 디테일)은 임의로 “확정”하지 말고 `docs/project-context.md` / 바이블에 맞춰 오픈으로 두거나 질문할 것
+- **다국어**: 플레이어에게 보이는 문자열을 C#에 하드코딩하지 말 것. `Assets/Resources/Loc/{lang}/*.json` 키로만 참조 (`Loc.T` / `Loc.Choice`)
+- 에피소드·에셋 추가 절차: `docs/bible/08_CONTENT_PIPELINE.md`

@@ -10,5 +10,6 @@
   <ItemGroup>
     <Compile Include="..\..\Assets\Scripts\Negotiation\Core\**\*.cs" Link="Core\%(Filename)%(Extension)" />
     <Compile Include="..\..\Assets\Scripts\Negotiation\Episodes\**\*.cs" Link="Episodes\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Assets\Scripts\Negotiation\Localization\**\*.cs" Link="Localization\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

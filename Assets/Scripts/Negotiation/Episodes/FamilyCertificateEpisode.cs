@@ -1,9 +1,12 @@
 using System;
+using UntitledGame.Negotiation.Localization;
 
 namespace UntitledGame.Negotiation.Episodes
 {
     /// <summary>
-    /// 테스트 에피소드: 가족관계증명서. 근거 docs/test-episode-family-certificate.md
+    /// Test episode: family certificate. Han Minji joined two weeks ago and still hasn't submitted it;
+    /// the manager orders it in person, the negotiation itself happens over the company messenger.
+    /// Logic only — player-facing text via Loc keys (fc.*, speaker.*, ui.*).
     /// </summary>
     public sealed class FamilyCertificateEpisode : INegotiationEpisode
     {
@@ -18,71 +21,116 @@ namespace UntitledGame.Negotiation.Episodes
             Outcome
         }
 
+        /// <summary>How a line reaches the other person.</summary>
+        private enum Via
+        {
+            Speech,
+            Chat,
+            Think
+        }
+
+        private readonly struct Line
+        {
+            public Line(string who, string key, Via via, bool seen = false)
+            {
+                Who = who;
+                Key = key;
+                Via = via;
+                Seen = seen;
+            }
+
+            public string Who { get; }
+            public string Key { get; }
+            public Via Via { get; }
+            public bool Seen { get; }
+        }
+
+        private const string Park = "park";
+        private const string Intern = "intern";
+        private const string Minji = "minjae";
+
         private Step _step;
         private NegotiationFrame _frame = new NegotiationFrame();
-        private float _lineElapsed;
         private float _silenceHeld;
+        private float _interruptHeld;
         private bool _waitingInput;
-        private bool _interruptWindowOpen;
-        private string _pendingSystemLine = "";
         private Action? _afterBridge;
+        private string _partnerBackgroundId = "office_manager";
+        private string _talkingTo = Park;
+        private bool _messengerOpen;
+        private int _chatSession;
 
-        public string Title => "가족관계증명서";
+        public string Title => Loc.T("fc.title");
         public NegotiationState State { get; private set; } = new NegotiationState();
         public NegotiationFrame CurrentFrame => _frame;
         public bool IsFinished => _step == Step.Outcome;
 
+        /// <summary>0..1 how close we are to auto-silence. Used for choice shake UI.</summary>
+        public float ChoiceUrgency01
+        {
+            get
+            {
+                if (!_waitingInput || !_frame.AllowSilence || _frame.SilenceFailSeconds <= 0f)
+                    return 0f;
+                return Math.Clamp(_silenceHeld / _frame.SilenceFailSeconds, 0f, 1f);
+            }
+        }
+
         public void Start()
         {
-            State = new NegotiationState { MinutesLeft = 14f };
-            _pendingSystemLine =
-                "박팀장: 한민재. 가족관계증명서. 내일까지. 아니, 오늘까지.\n" +
-                "인턴이 연락해. 나 미팅 전에 체크리스트 닫을 거니까.\n" +
-                "…뭐? \"집 어딘가\"라고? 그거 네 문제야. 가서 받아와.";
-            ShowPreChoice();
+            State = new NegotiationState { MinutesLeft = 14f, Emotion01 = 0.4f };
+            _messengerOpen = false;
+            _talkingTo = Park;
+            Talk(ShowPreChoice,
+                S(Park, "fc.open.1"),
+                S(Intern, "fc.open.2"),
+                S(Park, "fc.open.3"),
+                S(Intern, "fc.open.4"),
+                S(Park, "fc.open.5"),
+                S(Intern, "fc.open.6"));
+        }
+
+        /// <summary>Advance auto-bridge lines after the UI finishes presenting them.</summary>
+        public void Advance()
+        {
+            if (_step != Step.Bridge || !_frame.AutoAdvance) return;
+            var next = _afterBridge;
+            _afterBridge = null;
+            next?.Invoke();
         }
 
         public void RestartFromNegotiation()
         {
-            var slack = State.SlackPrepared;
+            var prepared = State.GuidePrepared;
             var eye = State.ManagerEyeRaised;
             State = new NegotiationState
             {
-                MinutesLeft = slack ? 12f : 14f,
-                SlackPrepared = slack,
+                MinutesLeft = prepared ? 12f : 14f,
+                GuidePrepared = prepared,
                 ManagerEyeRaised = eye,
-                Cooperation = slack ? 1 : 0
+                Cooperation = prepared ? 1 : 0,
+                Emotion01 = 0.45f
             };
             State.Clamp();
-            _pendingSystemLine = "교섭 직전으로 돌아왔다. (오프닝·프리초이스 스킵)";
-            EnterBeat1();
+            _messengerOpen = false;
+            _chatSession++;
+            Talk(StartChat, T("fc.restart_pending"));
         }
 
         public void SubmitChoice(string choiceId)
         {
             if (!_waitingInput) return;
             _silenceHeld = 0f;
-
-            if (_step == Step.Outcome)
-            {
-                if (choiceId == "retry") RestartFromNegotiation();
-                return;
-            }
-
-            if (_step == Step.Bridge)
-            {
-                if (choiceId == "continue")
-                {
-                    var next = _afterBridge;
-                    _afterBridge = null;
-                    next?.Invoke();
-                }
-
-                return;
-            }
+            _interruptHeld = 0f;
 
             switch (_step)
             {
+                case Step.Outcome:
+                    if (choiceId == "retry") RestartFromNegotiation();
+                    return;
+                case Step.Bridge:
+                    Advance();
+                    return;
                 case Step.PreChoice:
                     ApplyPreChoice(choiceId);
                     break;
@@ -106,6 +154,7 @@ namespace UntitledGame.Negotiation.Episodes
             if (!_waitingInput || !_frame.AllowSilence || _step == Step.Outcome || _step == Step.Bridge)
                 return;
             _silenceHeld = 0f;
+            _interruptHeld = 0f;
 
             switch (_step)
             {
@@ -126,21 +175,47 @@ namespace UntitledGame.Negotiation.Episodes
 
         public void SubmitInterrupt()
         {
-            if (!_waitingInput || !_frame.AllowInterrupt || !_interruptWindowOpen) return;
-            if (_step == Step.Outcome || _step == Step.Bridge) return;
-            _silenceHeld = 0f;
+            if (!_waitingInput || !_frame.AllowInterrupt || _step == Step.Outcome || _step == Step.Bridge)
+                return;
+            if (_step is not (Step.Beat1 or Step.Beat2 or Step.Beat3 or Step.Beat4))
+                return;
 
-            switch (_step)
+            var positive = _frame.InterruptIsPositive;
+            var resume = _step;
+            _silenceHeld = 0f;
+            _interruptHeld = 0f;
+            _frame.AllowInterrupt = false;
+            Spend(0.4f);
+
+            Action back = () =>
             {
-                case Step.Beat1:
-                    ApplyBeat1("interrupt", InputKind.Interrupt);
-                    break;
-                case Step.Beat2:
-                    ApplyBeat2("interrupt", InputKind.Interrupt);
-                    break;
-                case Step.Beat3:
-                    ApplyBeat3("interrupt", InputKind.Interrupt);
-                    break;
+                switch (resume)
+                {
+                    case Step.Beat1: EnterBeat1(); break;
+                    case Step.Beat2: EnterBeat2(); break;
+                    case Step.Beat3: EnterBeat3(); break;
+                    case Step.Beat4: EnterBeat4(); break;
+                }
+            };
+
+            if (positive)
+            {
+                TouchEmotion(-0.12f);
+                State.Cooperation += 1;
+                State.Clamp();
+                Talk(back,
+                    C(Intern, "fc.interrupt.pos.say"),
+                    C(Minji, "fc.interrupt.pos.reply"));
+            }
+            else
+            {
+                TouchEmotion(0.22f);
+                State.Cooperation -= 1;
+                State.Pride -= 1;
+                State.Clamp();
+                Talk(back,
+                    C(Intern, "fc.interrupt.neg.say"),
+                    C(Minji, "fc.interrupt.neg.reply"));
             }
         }
 
@@ -148,9 +223,12 @@ namespace UntitledGame.Negotiation.Episodes
         {
             if (!_waitingInput || _step == Step.Outcome || _step == Step.Bridge) return;
 
-            _lineElapsed += deltaSeconds;
-            if (_frame.AllowInterrupt)
-                _interruptWindowOpen = _lineElapsed <= _frame.InterruptWindowSeconds;
+            if (_frame.AllowInterrupt && _frame.InterruptWindowSeconds > 0f)
+            {
+                _interruptHeld += deltaSeconds;
+                if (_interruptHeld >= _frame.InterruptWindowSeconds)
+                    _frame.AllowInterrupt = false;
+            }
 
             if (_frame.AllowSilence)
             {
@@ -160,25 +238,30 @@ namespace UntitledGame.Negotiation.Episodes
             }
         }
 
+        // ---------- Before messaging ----------
+
         private void ShowPreChoice()
         {
             _step = Step.PreChoice;
             _waitingInput = true;
-            _interruptWindowOpen = false;
             _frame = new NegotiationFrame
             {
                 Phase = EpisodePhase.PreChoice,
-                Speaker = "오프닝",
-                Line = _pendingSystemLine + "\n\n교섭 전. 어떻게 들어갈까?",
-                StatusLine = "D-23 · 14:10 → 미팅 15:30 · " + State.DebugSummary(),
+                Speaker = Loc.T("speaker.intern"),
+                Line = Loc.T("fc.pre.prompt"),
+                StatusLine = Loc.F("fc.pre.status", State.DebugSummary()),
+                PortraitId = Intern,
+                PortraitPose = "front",
+                LeftBackgroundId = "office_hr",
+                RightBackgroundId = _partnerBackgroundId,
+                ChatSession = _chatSession,
                 Choices = new[]
                 {
-                    new ChoiceOption("A", "프로파일만 훑고 바로 연락한다."),
-                    new ChoiceOption("B", "슬랙으로 서류 리스트 + 제출 링크를 먼저 보낸다.", "시간 −2 · 준비도 ↑"),
-                    new ChoiceOption("C", "팀장에게 기한을 내일 아침으로 물어본다.", "거절 + 눈치 ↑")
+                    Loc.Choice("A", "fc.pre.a"),
+                    Loc.Choice("B", "fc.pre.b", "fc.pre.b_hint"),
+                    Loc.Choice("C", "fc.pre.c", "fc.pre.c_hint")
                 }
             };
-            _pendingSystemLine = "";
         }
 
         private void ApplyPreChoice(string id)
@@ -186,39 +269,49 @@ namespace UntitledGame.Negotiation.Episodes
             switch (id)
             {
                 case "B":
-                    State.SlackPrepared = true;
+                    State.GuidePrepared = true;
                     State.MinutesLeft -= 2f;
                     State.Cooperation += 1;
-                    _pendingSystemLine = "슬랙 전송 완료. 민재가 첨부 링크는 열어 둔 상태.";
-                    break;
+                    State.Clamp();
+                    Talk(StartChat,
+                        T("fc.pre.b.say"),
+                        T("fc.pre.b.after"));
+                    return;
                 case "C":
                     State.ManagerEyeRaised = true;
                     State.MinutesLeft -= 1f;
-                    _pendingSystemLine = "박팀장: \"내일? 내가 미쳤냐. 오늘.\" 눈치 ↑";
-                    break;
+                    State.Clamp();
+                    Talk(StartChat,
+                        S(Intern, "fc.pre.c.say"),
+                        S(Park, "fc.pre.c.park"),
+                        S(Intern, "fc.pre.c.after"));
+                    return;
                 default:
-                    _pendingSystemLine = "프로파일: 트리거=세대론 / 약점=명찰·슬랙 / 체면=부모 호출.";
-                    break;
+                    Talk(StartChat, T("fc.pre.a.say"));
+                    return;
             }
+        }
 
-            State.Clamp();
-            EnterBeat1();
+        // ---------- Messenger ----------
+
+        private void StartChat()
+        {
+            _messengerOpen = true;
+            _talkingTo = Minji;
+            Talk(EnterBeat1,
+                C(Intern, "fc.chat.1"),
+                C(Intern, "fc.chat.2"),
+                Seen("fc.chat.seen"),
+                C(Minji, "fc.chat.3"));
         }
 
         private void EnterBeat1()
         {
             _step = Step.Beat1;
-            ArmTimedPrompt(
-                EpisodePhase.Beat1,
-                "한민재",
-                PrefixPending("어, 안녕하세요? 저 지금 카페인데요. 입사 관련이죠? 카페에서—"),
-                "Beat 1 · 연결",
-                allowSilence: true,
-                allowInterrupt: true,
-                interruptWindow: 2.2f,
-                silenceFail: 2.8f,
-                new ChoiceOption("A", "가족관계증명서만 남았어요. 오늘 중으로 주세요."),
-                new ChoiceOption("B", "민재님 입사 준비 잘 되고 계세요?", "스몰톡 · 시간 −1"));
+            ArmTimedPrompt(EpisodePhase.Beat1, C(Minji, "fc.b1.line"), Loc.T("fc.b1.status"),
+                Loc.Choice("rule", "fc.b1.choice.rule"),
+                Loc.Choice("family", "fc.b1.choice.family", "fc.b1.choice.family_hint"),
+                Loc.Choice("money", "fc.b1.choice.money", "fc.b1.choice.money_hint"));
         }
 
         private void ApplyBeat1(string id, InputKind kind)
@@ -228,123 +321,139 @@ namespace UntitledGame.Negotiation.Episodes
             if (kind == InputKind.Silence)
             {
                 State.Cooperation -= 1;
+                State.PrivacyRaised = true;
+                TouchEmotion(0.1f);
                 State.Clamp();
-                Bridge(
-                    "한민재",
-                    "…여보세요? 끊긴 거예요?\n아 그거… 집에 있을 건데, 지금 밖에 있어서요. 내일 들고 가면 안 돼요?",
-                    EnterBeat2);
+                Talk(EnterBeat2,
+                    C(Minji, "fc.b1.silence.1"),
+                    C(Minji, "fc.b1.silence.2"),
+                    C(Intern, "fc.b1.silence.you"),
+                    C(Minji, "fc.b1.silence.3"),
+                    C(Minji, "fc.b2.ask"));
                 return;
             }
 
-            if (kind == InputKind.Interrupt)
+            switch (id)
             {
-                State.Cooperation += 1;
-                State.Pride -= 1;
-                State.Pressure = DeadlinePressure.Tight;
-                State.Clamp();
-                Bridge(
-                    "당신 → 한민재",
-                    "서류부터요.\n\n한민재: …네. 그거… 집에 있을 건데, 지금 밖에 있어서요. 내일 들고 가면 안 돼요?",
-                    EnterBeat2);
-                return;
+                case "family":
+                    State.TriggerFired = true;
+                    State.Pride -= 2;
+                    State.Cooperation -= 1;
+                    TouchEmotion(0.28f);
+                    State.Clamp();
+                    Talk(EnterBeat2,
+                        C(Intern, "fc.b1.choice.family.say"),
+                        C(Minji, "fc.b1.family.1"),
+                        C(Minji, "fc.b1.family.2"),
+                        C(Minji, "fc.b1.family.3"),
+                        T("fc.b1.family.think"),
+                        C(Intern, "fc.b1.family.sorry"),
+                        C(Minji, "fc.b2.ask"));
+                    return;
+                case "money":
+                    State.Cooperation += 1;
+                    State.Pride += 1;
+                    TouchEmotion(-0.08f);
+                    State.Clamp();
+                    Talk(EnterBeat2,
+                        C(Intern, "fc.b1.choice.money.say"),
+                        C(Minji, "fc.b1.money.1"),
+                        C(Minji, "fc.b1.money.2"),
+                        T("fc.b1.money.think"),
+                        C(Minji, "fc.b2.ask"));
+                    return;
+                default:
+                    State.Cooperation += 1;
+                    State.PrivacyRaised = true;
+                    TouchEmotion(-0.05f);
+                    State.Clamp();
+                    Talk(EnterBeat2,
+                        C(Intern, "fc.b1.choice.rule.say"),
+                        C(Minji, "fc.b1.rule.1"),
+                        C(Intern, "fc.b1.rule.2"),
+                        C(Minji, "fc.b1.rule.3"),
+                        C(Minji, "fc.b2.ask"));
+                    return;
             }
-
-            if (id == "B")
-            {
-                State.Pride += 1;
-                State.MinutesLeft -= 1f;
-                State.Clamp();
-                Bridge(
-                    "한민재",
-                    "아 네네 잘 되고 있어요~ 아 그거… 집에 있을 건데, 지금 밖에 있어서요. 내일 들고 가면 안 돼요?",
-                    EnterBeat2);
-                return;
-            }
-
-            State.Pressure = DeadlinePressure.Tight;
-            State.Clamp();
-            Bridge(
-                "한민재",
-                "아 그거… 집에 있을 건데, 지금 밖에 있어서요. 내일 들고 가면 안 돼요?",
-                EnterBeat2);
         }
 
         private void EnterBeat2()
         {
             _step = Step.Beat2;
-            ArmTimedPrompt(
-                EpisodePhase.Beat2,
-                "한민재",
-                "이거 인터넷으로도 되죠? 근데 공동인증서가… 아 맞다 폰 바꿨는데—\n그리고 어제 메일은 봤는데, 첨부 리스트가 길어서 그냥… 스크롤하다가—",
-                "Beat 2 · 변명 · 끼어들기로 루프 차단",
-                allowSilence: true,
-                allowInterrupt: true,
-                interruptWindow: 3.5f,
-                silenceFail: 4.5f,
-                new ChoiceOption("push", "내일은 팀장님이 안 받아요. 오늘이요."),
-                new ChoiceOption("mz", "MZ분들은 서류를 잘 안 보시더라고요.", "역린 · 함정"));
+            ArmTimedPrompt(EpisodePhase.Beat2, C(Minji, "fc.b2.line"), Loc.T("fc.b2.status"),
+                Loc.Choice("online", "fc.b2.choice.online"),
+                Loc.Choice("push", "fc.b2.choice.push"),
+                Loc.Choice("snark", "fc.b2.choice.snark", "fc.b2.choice.snark_hint"));
         }
 
         private void ApplyBeat2(string id, InputKind kind)
         {
             if (kind == InputKind.Silence)
             {
-                State.GotPhoneInfo = true;
                 State.MinutesLeft -= 2f;
                 State.Clamp();
-                Bridge("시스템", "민재가 끝까지 말했다. 정보: 폰을 바꿈. 시간 −2분.", EnterBeat3);
+                Talk(EnterBeat3,
+                    C(Minji, "fc.b2.silence.1"),
+                    C(Minji, "fc.b2.silence.2"),
+                    T("fc.b2.silence.think"));
                 return;
             }
 
-            if (kind == InputKind.Interrupt)
+            switch (id)
             {
-                State.Cooperation += 1;
-                State.Clamp();
-                Bridge(
-                    "당신 → 한민재",
-                    "정부24로 바로 발급 돼요. 카페에서도요.\n\n한민재: …아, 그거요? 지금요?",
-                    EnterBeat3);
-                return;
-            }
+                case "snark":
+                    State.TriggerFired = true;
+                    TouchEmotion(0.28f);
+                    State.Pride -= 2;
+                    State.Cooperation -= 1;
+                    State.Clamp();
+                    Talk(EnterBeat3,
+                        C(Intern, "fc.b2.choice.snark.say"),
+                        C(Minji, "fc.b2.snark.1"),
+                        C(Minji, "fc.b2.snark.2"));
+                    return;
+                case "push":
+                    State.Cooperation += 1;
+                    State.Pride -= 1;
+                    State.Clamp();
+                    Talk(EnterBeat3,
+                        C(Intern, "fc.b2.choice.push.say"),
+                        C(Minji, "fc.b2.push.1"),
+                        C(Intern, "fc.b2.push.2"),
+                        C(Minji, "fc.b2.push.3"));
+                    return;
+                default:
+                    State.Cooperation += 1;
+                    State.KnowsOnlineRoute = true;
+                    State.Clamp();
+                    if (State.GuidePrepared)
+                    {
+                        Talk(EnterBeat3,
+                            C(Intern, "fc.b2.choice.online.say"),
+                            C(Intern, "fc.b2.online.guide"),
+                            C(Minji, "fc.b2.online.1"),
+                            C(Intern, "fc.b2.online.2"),
+                            C(Minji, "fc.b2.online.3"));
+                        return;
+                    }
 
-            if (id == "mz")
-            {
-                State.TriggerFired = true;
-                State.Pride -= 2;
-                State.Cooperation -= 1;
-                State.Clamp();
-                Bridge(
-                    "한민재",
-                    "와 첫날부터 세대론이세요? ㅋㅋ 서류는 찾을게요. 태도 문제는 아닌 것 같은데요.",
-                    EnterBeat3);
-                return;
+                    Talk(EnterBeat3,
+                        C(Intern, "fc.b2.choice.online.say"),
+                        C(Minji, "fc.b2.online.1"),
+                        C(Intern, "fc.b2.online.2"),
+                        C(Minji, "fc.b2.online.3"));
+                    return;
             }
-
-            State.Cooperation += 1;
-            State.Pride -= 1;
-            State.Clamp();
-            Bridge(
-                "한민재",
-                "…오늘이요? 하, 알겠어요. 그러면… 저녁에 집 가서 찾아서 내일 아침에 찍어서 보내면요?",
-                EnterBeat3);
         }
 
         private void EnterBeat3()
         {
             _step = Step.Beat3;
-            ArmTimedPrompt(
-                EpisodePhase.Beat3,
-                "한민재",
-                "그러면… 저녁에 집 가서 찾아서 내일 아침에 찍어서 보내면요?",
-                "Beat 3 · 거래",
-                allowSilence: true,
-                allowInterrupt: true,
-                interruptWindow: 2.0f,
-                silenceFail: 3.0f,
-                new ChoiceOption("practical", "지금 정부24 → PDF. 링크 다시 보낼게요. 5분이면 됩니다."),
-                new ChoiceOption("face", "잊으신 거 누가 알겠어요. 저만 체크리스트 닫으면 끝이에요."),
-                new ChoiceOption("badge", "안 오면 입사식 명찰·슬랙 보류예요.", "약점 압박 · 애매 위험"),
-                new ChoiceOption("parent", "어머니께 부탁하시면 제일 빨라요.", "체면 위험"));
+            ArmTimedPrompt(EpisodePhase.Beat3, C(Minji, "fc.b3.line"), Loc.T("fc.b3.status"),
+                Loc.Choice("now", "fc.b3.choice.now"),
+                Loc.Choice("mask", "fc.b3.choice.mask"),
+                Loc.Choice("cover", "fc.b3.choice.cover"),
+                Loc.Choice("payhold", "fc.b3.choice.payhold", "fc.b3.choice.payhold_hint"));
         }
 
         private void ApplyBeat3(string id, InputKind kind)
@@ -355,61 +464,53 @@ namespace UntitledGame.Negotiation.Episodes
             {
                 State.Cooperation -= 1;
                 State.Clamp();
-                Bridge("한민재", "……그럼 저녁에 할게요.", EnterBeat4);
+                Talk(EnterBeat4,
+                    C(Minji, "fc.b3.silence.1"),
+                    C(Intern, "fc.b3.silence.you"),
+                    Seen("fc.b3.silence.think"));
                 return;
             }
 
-            if (kind == InputKind.Interrupt)
-            {
-                State.Cooperation += 1;
-                State.Clamp();
-                Bridge(
-                    "당신 → 한민재",
-                    "아침이면 팀장 미팅 지나가요.\n\n한민재: …아. 맞다. 오늘이긴 해야 하는데.",
-                    EnterBeat4);
-                return;
-            }
-
-            string reaction;
+            string youKey;
+            string reactionKey;
             switch (id)
             {
-                case "face":
+                case "mask":
+                    youKey = "fc.b3.choice.mask.say";
+                    if (State.PrivacyRaised && !State.TriggerFired)
+                    {
+                        State.Cooperation += 2;
+                        reactionKey = "fc.b3.react.mask_hit";
+                    }
+                    else
+                    {
+                        State.Cooperation += 1;
+                        reactionKey = "fc.b3.react.mask";
+                    }
+                    break;
+                case "cover":
                     State.Pride += 1;
                     State.Cooperation += 1;
-                    reaction = "ㅋㅋ 그 말 들으니까 좀 덜 창피하네요. 지금 끊어보고 보낼게요.";
+                    youKey = "fc.b3.choice.cover.say";
+                    reactionKey = "fc.b3.react.cover";
                     break;
-                case "badge":
-                    State.BadgeThreatUsed = true;
+                case "payhold":
+                    State.PayHoldThreatUsed = true;
                     State.Cooperation += 2;
                     State.Pride -= 1;
-                    reaction = "명찰요? …알겠어요. 지금 할게요. 근데 좀 과한 것 같긴 한데.";
-                    break;
-                case "parent":
-                    State.ParentRouteUsed = true;
-                    if (State.Pride <= 0 || State.TriggerFired)
-                    {
-                        State.Cooperation -= 1;
-                        State.Pride -= 1;
-                        State.Clamp();
-                        Bridge(
-                            "한민재",
-                            "잠깐, 부모님까지요? 제가 애예요? …그냥 저녁에 할게요.",
-                            EnterBeat4);
-                        return;
-                    }
-
-                    State.Cooperation += 2;
-                    reaction = "엄마한테… 아 됐어요. 제가 정부24로 할게요.";
+                    youKey = "fc.b3.choice.payhold.say";
+                    reactionKey = "fc.b3.react.payhold";
                     break;
                 default:
                     if (State.Cooperation < 2) State.Cooperation += 1;
-                    if (State.SlackPrepared || State.GotPhoneInfo) State.Cooperation += 1;
-                    reaction = "…알겠어요. 지금 해볼게요. 링크만요.";
+                    if (State.GuidePrepared || State.KnowsOnlineRoute) State.Cooperation += 1;
+                    youKey = "fc.b3.choice.now.say";
+                    reactionKey = "fc.b3.react.now";
                     break;
             }
 
             State.Clamp();
-            Bridge("한민재", reaction, EnterBeat4);
+            Talk(EnterBeat4, C(Intern, youKey), C(Minji, reactionKey));
         }
 
         private void EnterBeat4()
@@ -419,46 +520,51 @@ namespace UntitledGame.Negotiation.Episodes
             State.Clamp();
 
             _step = Step.Beat4;
-            ArmTimedPrompt(
-                EpisodePhase.Beat4,
-                "박팀장 (슬랙)",
-                "한민재 서류. 미팅 전. 답만.",
-                "Beat 4 · 마감임박 · 침묵하면 escalate",
-                allowSilence: true,
-                allowInterrupt: false,
-                interruptWindow: 0f,
-                silenceFail: 2.2f,
-                new ChoiceOption("honest", "민재에게 사실대로: 팀장이 지금 재촉 중."),
-                new ChoiceOption("stall", "팀장에게 \"받는 중\"만 회신하고 민재 교섭 계속."),
-                new ChoiceOption("panic", "팀장·민재 동시 대응 (당황)"));
+            ArmTimedPrompt(EpisodePhase.Beat4, S(Park, "fc.b4.line"), Loc.T("fc.b4.status"),
+                Loc.Choice("honest", "fc.b4.choice.honest"),
+                Loc.Choice("stall", "fc.b4.choice.stall"),
+                Loc.Choice("panic", "fc.b4.choice.panic"));
         }
 
         private void ApplyBeat4(string id, InputKind kind)
         {
-            if (kind == InputKind.Silence || id == "panic")
+            if (kind == InputKind.Silence)
             {
-                Finish(EpisodeOutcome.Escalate);
+                Talk(() => Finish(EpisodeOutcome.Escalate), S(Park, "fc.b4.silence"));
                 return;
             }
 
-            if (id == "honest")
+            switch (id)
             {
-                if (State.Cooperation >= 2 && !State.TriggerFired)
-                    State.Cooperation += 1;
-                else
-                    State.Pride -= 1;
+                case "panic":
+                    Talk(() => Finish(EpisodeOutcome.Escalate),
+                        C(Intern, "fc.b4.choice.panic.say"),
+                        C(Minji, "fc.b4.panic.1"),
+                        S(Park, "fc.b4.panic.2"));
+                    return;
+                case "honest":
+                    if (State.Cooperation >= 2 && !State.TriggerFired)
+                        State.Cooperation += 1;
+                    else
+                        State.Pride -= 1;
+                    State.Clamp();
+                    Talk(() => Finish(ResolveOutcome()), C(Intern, "fc.b4.choice.honest.say"));
+                    return;
+                default:
+                    State.Clamp();
+                    Talk(() => Finish(ResolveOutcome()), S(Intern, "fc.b4.choice.stall.say"));
+                    return;
             }
-
-            State.Clamp();
-            Finish(ResolveOutcome());
         }
+
+        // ---------- Outcome ----------
 
         private EpisodeOutcome ResolveOutcome()
         {
             if (State.TriggerFired && State.Cooperation < 2)
                 return EpisodeOutcome.Failure;
 
-            if (State.BadgeThreatUsed && State.Pride < 0)
+            if (State.PayHoldThreatUsed && State.Pride < 0)
                 return EpisodeOutcome.Ambiguous;
 
             if (State.Cooperation >= 2 && !State.TriggerFired)
@@ -474,34 +580,32 @@ namespace UntitledGame.Negotiation.Episodes
         {
             _step = Step.Outcome;
             _waitingInput = true;
-            _interruptWindowOpen = false;
+            _messengerOpen = false;
 
-            string title;
-            string body;
+            string titleKey;
+            string bodyKey;
             switch (outcome)
             {
                 case EpisodeOutcome.MinSuccess:
-                    title = "★ 최소 성공 — PDF 입고";
-                    body =
-                        "민재가 카페에서 발급해 제출했다.\n박팀장: \"됐어.\" (칭찬 없음. 체크리스트는 닫힘.)\n전환 심사: 온보딩 클로징 작은 플러스.\n\n서류는 왔다. 자존심 상한 신입은 아직 안 왔다. 그건 내일 문제다.";
+                    titleKey = "fc.out.success.title";
+                    bodyKey = "fc.out.success.body";
                     break;
                 case EpisodeOutcome.Ambiguous:
-                    title = "◆ 애매 — 오긴 왔는데";
-                    body =
-                        "서류는 오늘 23:40에 도착. 팀장 미팅에는 못 썼다.\n박팀장: \"미팅 전에 하라고 했지. 인턴 일정 감각이…\"\n전환 심사: 플러스·마이너스 상쇄. 팀장 눈치 잔여.";
+                    titleKey = "fc.out.ambiguous.title";
+                    bodyKey = "fc.out.ambiguous.body";
                     break;
                 case EpisodeOutcome.Escalate:
-                    title = "✗✗ 팀장 escalate";
-                    body =
-                        "박팀장이 민재에게 직접 전화했다. 민재 불쾌.\n박팀장: \"내가 왜 신입한테 전화하냐. 너 전환 때 이 얘기 나온다.\"\n\n서류는 팀장이 받아냈다. 네 체면도 같이 가져갔다.";
+                    titleKey = "fc.out.escalate.title";
+                    bodyKey = "fc.out.escalate.body";
                     break;
                 default:
-                    title = "✗ 실패 — 내일 들고 갈게요";
-                    body =
-                        "한민재: \"내일 입사할 때 지참할게요. 끊을게요.\"\n체크리스트 미닫힘. 전환 심사에 구멍.";
+                    titleKey = "fc.out.fail.title";
+                    bodyKey = "fc.out.fail.body";
                     break;
             }
 
+            var title = Loc.T(titleKey);
+            var body = Loc.T(bodyKey);
             _frame = new NegotiationFrame
             {
                 Phase = EpisodePhase.Outcome,
@@ -509,68 +613,117 @@ namespace UntitledGame.Negotiation.Episodes
                 Outcome = outcome,
                 OutcomeTitle = title,
                 OutcomeBody = body,
-                Speaker = "결과",
+                Speaker = Loc.T("speaker.outcome"),
                 Line = title + "\n\n" + body,
                 StatusLine = State.DebugSummary(),
+                PortraitId = Intern,
+                PortraitPose = "front",
+                LeftBackgroundId = "office_hr",
+                RightBackgroundId = _partnerBackgroundId,
+                ChatSession = _chatSession,
                 Choices = new[]
                 {
-                    new ChoiceOption("retry", "교섭 직전부터 다시 (학습 루프)"),
-                    new ChoiceOption("quit", "종료")
+                    Loc.Choice("retry", "ui.retry"),
+                    Loc.Choice("quit", "ui.quit")
                 }
             };
         }
 
-        private void Bridge(string speaker, string line, Action next)
+        // ---------- Dialogue plumbing ----------
+
+        private static Line S(string who, string key) => new Line(who, key, Via.Speech);
+        private static Line C(string who, string key) => new Line(who, key, Via.Chat);
+        private static Line T(string key) => new Line(Intern, key, Via.Think);
+        /// <summary>Intern's inner line at the moment the partner reads (unread "1" disappears).</summary>
+        private static Line Seen(string key) => new Line(Intern, key, Via.Think, seen: true);
+
+        /// <summary>Plays a short back-and-forth exchange, one line per frame, then continues.</summary>
+        private void Talk(Action next, params Line[] lines) => TalkFrom(0, lines, next);
+
+        private void TalkFrom(int index, Line[] lines, Action next)
         {
-            _step = Step.Bridge;
-            _waitingInput = true;
-            _interruptWindowOpen = false;
-            _afterBridge = next;
-            _frame = new NegotiationFrame
+            if (index >= lines.Length)
             {
-                Phase = EpisodePhase.Beat1,
-                Speaker = speaker,
-                Line = line,
-                StatusLine = "계속 · " + State.DebugSummary(),
-                Choices = new[] { new ChoiceOption("continue", "계속") }
-            };
+                next();
+                return;
+            }
+
+            var line = lines[index];
+            _step = Step.Bridge;
+            _afterBridge = () => TalkFrom(index + 1, lines, next);
+            _frame = BuildFrame(EpisodePhase.Beat1, line);
+            _frame.AutoAdvance = true;
+            _waitingInput = true;
         }
 
-        private void ArmTimedPrompt(
-            EpisodePhase phase,
-            string speaker,
-            string line,
-            string statusPrefix,
-            bool allowSilence,
-            bool allowInterrupt,
-            float interruptWindow,
-            float silenceFail,
-            params ChoiceOption[] choices)
+        private void ArmTimedPrompt(EpisodePhase phase, Line line, string statusPrefix, params ChoiceOption[] choices)
         {
             _waitingInput = true;
-            _lineElapsed = 0f;
             _silenceHeld = 0f;
-            _interruptWindowOpen = allowInterrupt;
-            _frame = new NegotiationFrame
+            _interruptHeld = 0f;
+            _frame = BuildFrame(phase, line);
+            _frame.StatusLine = statusPrefix + " · " + State.DebugSummary();
+            _frame.AllowSilence = true;
+            _frame.SilenceFailSeconds = EstimateReadSeconds(_frame.Line);
+            _frame.AllowInterrupt = phase is EpisodePhase.Beat1 or EpisodePhase.Beat2 or EpisodePhase.Beat3 or EpisodePhase.Beat4;
+            _frame.InterruptIsPositive = phase == EpisodePhase.Beat3;
+            _frame.InterruptWindowSeconds = Math.Clamp(_frame.SilenceFailSeconds * 0.4f, 5f, 10f);
+            _frame.Choices = choices;
+        }
+
+        private void TouchEmotion(float delta)
+        {
+            State.Emotion01 += delta;
+            State.Clamp();
+        }
+
+        private NegotiationFrame BuildFrame(EpisodePhase phase, Line line)
+        {
+            if (line.Who != Intern) _talkingTo = line.Who;
+            else if (line.Via == Via.Chat) _talkingTo = Minji;
+            RememberPartnerPlace(_talkingTo);
+
+            return new NegotiationFrame
             {
                 Phase = phase,
-                Speaker = speaker,
-                Line = line,
-                StatusLine = statusPrefix + " · " + State.DebugSummary(),
-                AllowSilence = allowSilence,
-                AllowInterrupt = allowInterrupt,
-                InterruptWindowSeconds = interruptWindow,
-                SilenceFailSeconds = silenceFail,
-                Choices = choices
+                Speaker = SpeakerName(line.Who),
+                Line = Loc.T(line.Key),
+                PortraitId = line.Who,
+                PortraitPose = PoseFor(line),
+                ListenerPortraitId = line.Who == Intern ? _talkingTo : "",
+                LeftBackgroundId = "office_hr",
+                RightBackgroundId = _partnerBackgroundId,
+                IsChat = line.Via == Via.Chat,
+                MessengerOpen = _messengerOpen,
+                ChatSession = _chatSession,
+                ChatSeen = line.Seen,
+                Choices = Array.Empty<ChoiceOption>()
             };
         }
 
-        private string PrefixPending(string line)
+        private static string SpeakerName(string who) =>
+            who switch
+            {
+                Park => Loc.T("speaker.park"),
+                Minji => Loc.T("speaker.minjae"),
+                _ => Loc.T("speaker.intern")
+            };
+
+        /// <summary>At the keyboard while messaging; face each other when speaking in person.</summary>
+        private string PoseFor(Line line) =>
+            _messengerOpen && line.Via != Via.Speech && _talkingTo == Minji ? "chat" : "";
+
+        private void RememberPartnerPlace(string portraitId)
         {
-            if (string.IsNullOrEmpty(_pendingSystemLine)) return line;
-            var p = _pendingSystemLine;
-            _pendingSystemLine = "";
-            return p + "\n\n" + line;
+            if (string.IsNullOrEmpty(portraitId) || portraitId == Intern)
+                return;
+            _partnerBackgroundId = portraitId == Park ? "office_manager" : "office_dev";
+        }
+
+        private static float EstimateReadSeconds(string line)
+        {
+            var n = string.IsNullOrEmpty(line) ? 0 : line.Length;
+            return Math.Clamp(12f + n * 0.09f, 14f, 45f);
         }
 
         private void Spend(float minutes)

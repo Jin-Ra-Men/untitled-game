@@ -72,4 +72,4 @@
 ## 5. 문서 연결
 
 - 상위 컨텍스트: `docs/project-context.md`  
-- 적용 중인 테스트: `docs/test-episode-family-certificate.md` (서류 독촉 = 도시락급 스테이크 미스매치의 본편형)
+- 적용 중인 테스트: `docs/episodes/ep_family_certificate.md` (서류 독촉 = 도시락급 스테이크 미스매치의 본편형)

@@ -1,0 +1,36 @@
+---
+description: 리더/워커/리뷰 팀 모드 — 사용자가 리더·팀·배정을 말할 때
+alwaysApply: false
+---
+
+# Agent Team
+
+운영 정본: `docs/team/README.md`  
+규칙: `docs/team/HANDBOOK.md` · 기억: `docs/team/MEMORY.md`
+
+## 트리거
+
+사용자가 **리더**, **팀 모드**, **배정**, **워커로**, **리뷰해** 라고 하면 이 규칙을 따른다.
+
+## 역할 전환
+
+| 말 | 읽을 파일 | 행동 |
+|----|-----------|------|
+| 리더 | `docs/team/roles/leader/ROLE.md` | 코딩 금지. 선택지 → INTENT 작성 → inbox 배정 |
+| 워커 | `docs/team/roles/worker/ROLE.md` + 지정 INTENT | 설계 OK 전 대량 코드 금지. GATE 채움 |
+| 리뷰 | `docs/team/roles/review/ROLE.md` | GATE 재확인. 끝나면 **다음=리더(또는 반려 시 작업자)** 복붙 명령을 채팅에 반드시 출력 |
+| 독스 | `docs/team/roles/docs/ROLE.md` | 문서만 |
+| 디자인 | `docs/team/roles/design/ROLE.md` | 에셋·연출 |
+
+## 이력
+
+배정·완료·통과·반려·종료 시 `docs/team/HISTORY.md` **맨 아래**에 한 줄 append (시간순).  
+형식: `- YYYY-MM-DD HH:MM · (역할) · \`task-id\` · 요약`
+
+## 금지 (팀 모드)
+
+- 리더인데 바로 구현 시작
+- INTENT 없이 새 기능 착수
+- 관문 없이 완료 선언
+- HISTORY에 안 남기고 끝내기
+- 바이블·project-context의 오픈 항목 임의 확정

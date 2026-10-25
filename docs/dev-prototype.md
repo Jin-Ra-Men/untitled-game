@@ -8,9 +8,17 @@
 
 ```bash
 dotnet run --project tools/Playtest
+dotnet run --project tools/Playtest -- --lang en
 ```
 
-조작: `1~4` 선택 · `S` 침묵 · `I` 끼어들기 · `Q` 종료 · 대기 시 침묵 자동.
+조작: `1~4` 선택 · `S` 침묵 · `Q` 종료 · 대기 시 침묵 자동.
+
+## 다국어 (Loc)
+
+- 플레이어용 문구는 스크립트에 넣지 않는다.
+- 테이블: `Assets/Resources/Loc/{ko|en}/*.json` (flat `"key": "value"`)
+- 코드: `Loc.T("fc.b1.line")` / `Loc.Choice("A", "fc.pre.a")`
+- 새 언어: `Loc/ja/` 폴더에 같은 키 JSON을 추가하면 된다.
 
 ## Unity (2D / C#)
 
@@ -24,9 +32,9 @@ dotnet run --project tools/Playtest
 
 ## 검증 포인트
 
-`docs/reference-tension-from-lunchbox.md` / 테스트 에피소드 메모와 동일:
+`docs/reference-tension-from-lunchbox.md` / [`episodes/ep_family_certificate.md`](episodes/ep_family_certificate.md) 와 동일:
 
-- 끼어들기가 변명 루프를 끊는지
+- 침묵(읽씹 방치)이 메신저 흐름에서 실제 손해로 느껴지는지
 - MZ 역린이 함정인지
 - 성공해도 팀장 칭찬이 없는지
 - 실패 후 교섭 직전 재시도가 되는지

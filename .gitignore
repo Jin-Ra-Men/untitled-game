@@ -27,3 +27,6 @@ sysinfo.txt
 # Playtest
 tools/Playtest/bin/
 tools/Playtest/obj/
+
+# Unity Hub nested checkout (duplicate of Assets; edit the repo root copy)
+/untitled-game/
