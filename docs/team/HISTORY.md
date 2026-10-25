@@ -33,4 +33,5 @@
 - 2026-10-25 14:54 · (team) · `-` · `HISTORY.md` 신설 + 전 역할 append 의무 (HANDBOOK·ROLE).
 - 2026-10-25 14:56 · (worker) · `-` · 끼어들기·Emotion 10칸 UI/시스템 재도입 (FC 비트 프롬프트, 바이블·Loc 갱신).
 - 2026-10-25 15:01 · (team) · `-` · HISTORY 누락분 백필 (bible·GUIDE·반려·리뷰맺음말 등).
+- 2026-10-25 15:16 · (team) · `-` · README 소개만 남김 · 작업 커밋·푸시 (`3dae2a8`). Hub용 `untitled-game/`은 gitignore.
 - 2026-10-25 15:02 · (leader) · `20261025-ep-opening-impl` · N1 선택. 워커에 `ep_opening` Loc+C# 구현 배정.
